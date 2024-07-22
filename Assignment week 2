@@ -1,0 +1,67 @@
+CREATE FUNCTION ConvertToMMDDYYYY(@inputDate DATETIME)
+RETURNS VARCHAR(10)
+AS
+BEGIN
+    RETURN CONVERT(VARCHAR(10), @inputDate, 101)
+END
+
+CREATE FUNCTION ConvertToYYYYMMDD(@inputDate DATETIME)
+RETURNS VARCHAR(8)
+AS
+BEGIN
+    RETURN REPLACE(CONVERT(VARCHAR(8), @inputDate, 112), '-', '')
+END
+
+
+CREATE VIEW vwCustomerOrders AS
+SELECT
+    c.CompanyName,
+    o.OrderID,
+    o.OrderDate,
+    od.ProductID,
+    p.ProductName,
+    od.Quantity,
+    od.UnitPrice,
+    od.Quantity * od.UnitPrice AS TotalPrice
+FROM Orders 
+
+CREATE TRIGGER trgDeleteOrder
+ON Orders
+INSTEAD OF DELETE
+AS
+BEGIN
+    DELETE FROM OrderDetails WHERE OrderID IN (SELECT deleted.OrderID FROM deleted)
+    DELETE FROM Orders WHERE OrderID IN (SELECT deleted.OrderID FROM deleted)
+END
+
+JOIN Customers c ON o.CustomerID = c.CustomerID
+JOIN OrderDetails od ON o.OrderID = od.OrderID
+JOIN Products p ON od.ProductID = p.ProductID
+WHERE CONVERT(DATE, o.OrderDate) = DATEADD(DAY, -1, GETDATE())
+
+
+CREATE TRIGGER trgCheckStock
+ON OrderDetails
+AFTER INSERT
+AS
+BEGIN
+    DECLARE @ProductID INT, @Quantity INT
+
+    SELECT @ProductID = ProductID, @Quantity = Quantity
+    FROM inserted
+
+    IF EXISTS (SELECT 1 FROM Products WHERE ProductID = @ProductID AND UnitsInStock >= @Quantity)
+    BEGIN
+        UPDATE Products
+        SET UnitsInStock = UnitsInStock - @Quantity
+        WHERE ProductID = @ProductID
+    END
+    ELSE
+    BEGIN
+        RAISEERROR ('Insufficient stock. Order not inserted.', 16, 1)
+        ROLLBACK TRANSACTION
+    END
+END
+
+
+
